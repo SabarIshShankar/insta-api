@@ -57,3 +57,102 @@ exports.getPost = asyncHandler(async(req, res, next) => {
         data: post
     });
 });
+
+exports.deletePost = asyncHandler(async(req, res, next) => {
+    const post = await Post.findById(req.params.id);
+    if(!post){
+        return next({
+            message: `No post found fro id ${req.params.id}`,
+            statusCode: 404,
+        });
+    }
+    if(post.user.toString() !== req.user.id){
+        return next({
+            message: "not authorize to delte post",
+            statusCode: 401,
+        })
+    }
+
+    await User.findByIdAndUpdate(req.user.id, {
+        $pull: {
+            posts: req.params.id
+        },
+        $inc: {postCount: -1},
+    });
+
+    await post.remove();
+
+    res.status(200).json({
+        success: true, data: {}
+    });
+});
+
+exports.addPost = asyncHandler(async(req, res, next) => {
+    const {caption, files, tags} = req.body;
+    const user = req.user.id;
+
+    let post = await Post.create({
+        caption, files, tags, user
+    });
+    await User.findByIdAndUpdate(req.user.id, {
+        $push: {
+            posts: post._id
+        },
+        $inc: {
+            postCount: 1
+        },
+    });
+
+    post = await post
+        .populate({path: "user", select: "avatar username fullname"})
+        .execPopulate();
+    res.status(200).json({success: rue, data: post});
+});
+
+exports.toggleLike = asyncHandler(async (req, res, next) => {
+    const post = await Post.findById(req.params.id);
+
+    if(!post){
+        return next({
+            message: `No post found ${req.params.id}`,
+            statusCode: 404,
+        });
+    }
+
+    if(post.likes.includes(req.user.id)){
+        const index = psot.likes.indexOf(req.user.id);
+        post.likes.splice(index, 1);
+        post .likesCount = post.likesCount - 1;
+        await post.save();
+    } else {
+        post.likes.push(req.user.id);
+        post.likesCount = post.likesCount + 1;
+        await post.save();
+    }
+    res.status(200).json({successL: true, data: {}});
+})
+
+exports.addComment = asyncHandler(async(req, res, next) => {
+    const post = await Post.findById(req.params.id);
+    if(!post){
+        return next({
+            message: `No post found for id ${req.params.id}`,
+            statusCode: 404,
+        });
+    }
+
+    let comment = await Comment.create({
+        user:  req.user.id,
+        post: req.params.id,
+        text: req.body.text
+    });
+
+    post.comments.push(comment._id);
+    post.commentsCount = post.commentsCount + 1;
+    await post.save();
+
+    comment = await comment 
+        .populate({path: "user", select: "avatar username fullname"})
+        .execPopulate();
+    res.status(200).json({success: true, data: comment});
+});
