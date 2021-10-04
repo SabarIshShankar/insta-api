@@ -1,6 +1,6 @@
 const User = require("../models/User");
 const Post = require("../models/Post");
-const asyncHanlder = require("../middlewares/asyncHanlder");
+const asyncHandler = require("../middlewares/asyncHandler");
 
 exports.getUsers = asyncHandler(async(req, res, next) => {
     let users = await User.find().select("-password").lean().exec();
@@ -116,3 +116,88 @@ exports.unfollow = asyncHandler(async(req, res, next) => {
     res.status(200).json({success: true, data: {}});
 });
 
+exports.feed = asyncHandler(async(req, res, next) => {
+    const following = req.user.following;
+
+    const users = await User.find()
+        .where("_id")
+        .in(following.concat([req.user.id]))
+        .exec();
+    const postIds = users.map((user) => user.posts).flat();
+
+    const posts = await Post.find()
+        .populate({
+            path: "comments",
+            select: "text",
+            populate: {
+                path: "user",
+                select: "avatar fullname username"
+            },
+        })
+        .populate({path: "user", select: "avatar fullname username"})
+        .sort("-createdAt")
+        .where("_id")
+        .in(postIds)
+        .lean()
+        .exec();
+
+    post.forEach((post) => {
+        post.isLiked = false;
+        const likes = post.likes.map((like) => like.toString());
+        if(likes.includes(req.user.id)){
+            post.isLiked = true;
+        }
+
+        post.isSaved = false;
+        const savedPosts = req.user.savedPosts.map((post) => post.toString());
+        if(savedPosts.includes(post._id)){
+            post.isSaved = true;
+        }
+
+        post.isMine = false;
+        if(post.user._id.toString() === req.user.id){
+            post.isMine = true;
+        }
+
+        post.comments.map((comment) => {
+            comment.isCommentMine = false;
+            if(comment.user._id.toString() === req.user.id){
+                comment.isCommentMine = true;
+            }
+        });
+    });
+    res.status(200).json({success: true, data: posts});
+})
+
+exports.searchUser = asyncHandler(async, (req, res, next) => {
+    if(!req.query.username){
+        return next({message: "The username cannot be empty", statusCode: 400});
+    }
+
+    const regex = new RegExp(req.query.username, "i");
+    const users = await User.find({username: regex});
+
+    res.status(200).json({success: true, data: users});
+});
+
+exports.editUser = asyncHandler(async(req, res, next) => {
+    const {avatar, username, fullname, website, bio, email} = req.body;
+    const fieldsToUpdate = {};
+    if(avatar) fieldsToUpdate.avatar = avatar;
+    if(username) fieldsToUpdate.username = username;
+    if(fullname) fieldsToUpdate.fullname = fullname;
+    if(email) fieldsToUpdate.email = email;
+
+    const user = await User.findByIdAndUpdate(
+        req.user.id,
+        {
+            $set: {...fieldsToUpdate, website, bio},
+        },
+        {
+            new: true,
+            runValidators: true,
+        }
+    ).select("avatar username fullname email bio website");
+
+    res.status(200).json({success:true, data: user});
+});
