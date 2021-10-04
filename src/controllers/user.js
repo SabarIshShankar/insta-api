@@ -56,4 +56,63 @@ exports.getUser = asyncHandler(async(req, res, next) => {
     user.isMe = req.user.id === user._id.toString();
 
     res.status(200).json({success: true, data: user});
-})
+});
+
+exports.follow = asyncHandler(async(req, res, next) => {
+    const user = await User.findyById(req.params.id);
+
+    if(!user) {
+        return next({
+            message: `No user found for ${req.params.id}`,
+            statusCode: 404,
+        });
+    }
+    if(req.params.id === req.params.id){
+        return next({message: "cant follow yourself", status: 400});
+    }
+
+    if(user.followers.includes(req.user.id)){
+        return next({
+            message: "You are already following", status: 400
+        })
+    }
+
+    await User.findByIdAndUpdate(req.params.id, {
+        $push: {followers: req.user.id},
+        $inc: {followersCount: 1}
+    });
+    await User.findByIdAndUpdate(req.user.id, {
+        $push: {following: req.params.id},
+        $inc: {followingCount: 1},
+    });
+
+    res.status(200).json({success: true, data: {}})
+});
+
+exports.unfollow = asyncHandler(async(req, res, next) => {
+    const user = await User.findById(req.params.id);
+
+    if(!user){
+        return next({
+            message: `No user found ID ${req.params.id}`,
+            statusCode: 404,
+        });
+    }
+
+    if(req.params.id === req.user.id){
+        return next({message: "You cant follow yourself", status: 400});
+    }
+
+    await User.findByIdAndUpdate(req.params.id, {
+        $pull: {followers: req.user.id},
+        $inc: {followersCount: -1},
+    });
+
+    await User.findByIdAndUpdate(req.user.id, {
+        $pull: {following: req.params.id},
+        $inc: {followingCount: -1},
+    });
+
+    res.status(200).json({success: true, data: {}});
+});
+
